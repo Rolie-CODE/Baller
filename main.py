@@ -87,8 +87,10 @@ while True:
             else:
                 gesture = "UNKNOWN"
 
-    cv.putText(frame, gesture, (50, 50),
-               cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    cv.rectangle(frame, (40, 20), (300, 70), (0, 0, 0), -1)
+
+    cv.putText(frame, gesture, (50, 55),
+           cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
     cv.imshow("Basketball Gesture Recognition", frame)
 
