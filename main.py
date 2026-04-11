@@ -73,10 +73,13 @@ while True:
                 gesture = "OPEN HAND (STOP)"
 
             elif fingers == [0, 1, 0, 0, 0]:
-                gesture = "PASS"
+                gesture = "1 POINT"
+
+            elif fingers == [1, 0, 0, 0, 0]:
+                gesture = "JUMP BALL"
 
             elif fingers == [0, 1, 1, 0, 0]:
-                gesture = "SHOOT"
+                gesture = "2 POINT"
 
             elif fingers == [1, 1, 1, 0, 0]:
                 gesture = "3 POINT"
