@@ -84,6 +84,12 @@ while True:
             elif fingers == [1, 1, 1, 0, 0]:
                 gesture = "3 POINT"
 
+            elif fingers == [0, 0, 1, 0, 0]:
+                            gesture = "Middle Finger"
+
+            elif fingers == [0, 0, 0, 0, 1]:
+                            gesture = "Small Finger"
+
             else:
                 gesture = "UNKNOWN"
 
