@@ -34,7 +34,8 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     new_user = models.User(
         username=user.username,
         email=user.email,
-        password=hashed_password
+        password=hashed_password,
+        school=user.school
     )
 
     db.add(new_user)
