@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 import models
 from database import engine, SessionLocal
 from schemas import UserCreate
+from security import hash_password
+
 
 
 models.Base.metadata.create_all(bind=engine)
@@ -29,10 +31,11 @@ def home():
 @app.post("/users")
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
 
+    hashed_password = hash_password(user.password)
     new_user = models.User(
         username=user.username,
         email=user.email,
-        password=user.password
+        password=hashed_password
     )
 
     db.add(new_user)
