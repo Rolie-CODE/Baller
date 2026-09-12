@@ -27,14 +27,14 @@ def home():
     return {"message": "Hello Rolie"}
 
 
-@app.post("/users")
+@app.post("/auth/register")
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
 
     hashed_password = hash_password(user.password)
     new_user = models.User(
         username=user.username,
         email=user.email,
-        password=hashed_password,
+        password_hash=hashed_password,
         school=user.school
     )
 
@@ -60,7 +60,7 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 
     password_valid = verify_password(
         user.password,
-        existing_user.password
+        existing_user.password_hash
     )
 
     if not password_valid:
