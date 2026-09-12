@@ -48,7 +48,7 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
 def login(user: UserLogin, db: Session = Depends(get_db)):
 
     existing_user = db.query(models.User).filter(
-        models.User.email == user.email
+        models.User.username == user.username
     ).first()
 
     if not existing_user:
