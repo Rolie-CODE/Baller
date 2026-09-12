@@ -1,10 +1,9 @@
-from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
-
+from fastapi import FastAPI, Depends, HTTPException
 import models
 from database import engine, SessionLocal
-from schemas import UserCreate
-from security import hash_password
+from schemas import UserCreate, UserLogin
+from security import hash_password, verify_password
 
 
 
@@ -35,7 +34,8 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     new_user = models.User(
         username=user.username,
         email=user.email,
-        password=hashed_password
+        password=hashed_password,
+        school=user.school
     )
 
     db.add(new_user)
@@ -43,3 +43,34 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     db.refresh(new_user)
 
     return new_user
+
+
+@app.post("/login")
+def login(user: UserLogin, db: Session = Depends(get_db)):
+
+    existing_user = db.query(models.User).filter(
+        models.User.username == user.username
+    ).first()
+
+    if not existing_user:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password"
+        )
+
+    password_valid = verify_password(
+        user.password,
+        existing_user.password
+    )
+
+    if not password_valid:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password"
+        )
+
+    return {
+        "message": "Login successful",
+        "user_id": existing_user.id,
+        "username": existing_user.username
+    }
