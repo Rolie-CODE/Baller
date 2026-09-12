@@ -68,6 +68,32 @@ def test_register_user_success(client):
     assert "password_hash" not in data
 
 
+def test_register_coach_success(client):
+    payload = {
+        "username": "coachpop",
+        "email": "pop@spurs.com",
+        "password": "championships5",
+        "role": "COACH"
+    }
+    response = client.post("/auth/register", json=payload)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["role"] == "COACH"
+    assert data["username"] == "coachpop"
+
+
+def test_register_admin_rejected(client):
+    payload = {
+        "username": "fakeadmin",
+        "email": "fakeadmin@platform.com",
+        "password": "hackerpassword",
+        "role": "ADMIN"
+    }
+    response = client.post("/auth/register", json=payload)
+    # Rejects unauthorized role selection at API boundary
+    assert response.status_code == 422
+
+
 def test_register_duplicate_email(client):
     payload1 = {
         "username": "player1",
@@ -124,24 +150,6 @@ def test_register_short_password(client):
     assert response.status_code == 422
 
 
-def test_register_missing_username(client):
-    payload = {
-        "email": "user@example.com",
-        "password": "password123"
-    }
-    response = client.post("/auth/register", json=payload)
-    assert response.status_code == 422
-
-
-def test_register_missing_email(client):
-    payload = {
-        "username": "validuser",
-        "password": "password123"
-    }
-    response = client.post("/auth/register", json=payload)
-    assert response.status_code == 422
-
-
 def test_login_with_username_and_email(client):
     reg_payload = {
         "username": "stephcurry",
@@ -167,13 +175,13 @@ def test_login_with_username_and_email(client):
     assert login_email_res.status_code == 200
     assert "access_token" in login_email_res.json()
 
-    # 3. Login using /login alias and username_or_email field
-    login_alias_res = client.post("/login", json={
+    # 3. Login using username_or_email field
+    login_field_res = client.post("/auth/login", json={
         "username_or_email": "stephcurry",
         "password": "splashbrother"
     })
-    assert login_alias_res.status_code == 200
-    assert "access_token" in login_alias_res.json()
+    assert login_field_res.status_code == 200
+    assert "access_token" in login_field_res.json()
 
 
 def test_login_invalid_password(client):

@@ -95,7 +95,7 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
         username=user.username,
         email=user.email,
         password_hash=hashed_password,
-        role="PLAYER",
+        role=user.role.value if hasattr(user.role, "value") else str(user.role),
         is_active=True
     )
 
@@ -107,7 +107,6 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
 
 
 @app.post("/auth/login", response_model=Token)
-@app.post("/login", response_model=Token)
 def login(user: UserLogin, db: Session = Depends(get_db)):
     identifier = user.get_identifier()
     if not identifier:
