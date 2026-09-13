@@ -50,6 +50,8 @@ def setup_test_database():
 def clean_tables_and_seed():
     db = TestingSessionLocal()
     try:
+        db.query(models.TeamMembership).delete()
+        db.query(models.Team).delete()
         db.query(models.PlayerProfile).delete()
         db.query(models.School).delete()
         db.query(models.User).delete()

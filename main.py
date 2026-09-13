@@ -17,6 +17,12 @@ from schemas import (
     PlayerProfileUpdate,
     PlayerProfileOut,
     PositionEnum,
+    TeamCreate,
+    TeamUpdate,
+    TeamOut,
+    TeamMembershipCreate,
+    TeamMembershipOut,
+    RosterMemberOut,
 )
 from security import hash_password, verify_password, create_access_token, decode_access_token
 
@@ -96,6 +102,15 @@ def require_admin(current_user: models.User = Depends(get_current_user)) -> mode
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Administrator privileges required"
+        )
+    return current_user
+
+
+def require_coach_or_admin(current_user: models.User = Depends(get_current_user)) -> models.User:
+    if current_user.role not in ["COACH", "ADMIN"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only coaches and administrators can perform this action"
         )
     return current_user
 
@@ -199,8 +214,19 @@ def get_me(current_user: models.User = Depends(get_current_user)):
 def create_school(
     school_in: SchoolCreate,
     db: Session = Depends(get_db),
-    admin_user: models.User = Depends(require_admin)
+    current_user: models.User = Depends(require_coach_or_admin)
 ):
+    # Rule: A coach can create and manage only one school
+    if current_user.role == "COACH":
+        existing_coach_school = db.query(models.School).filter(
+            models.School.created_by_user_id == current_user.id
+        ).first()
+        if existing_coach_school:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A coach can only create and manage one school"
+            )
+
     existing = db.query(models.School).filter(models.School.name == school_in.name).first()
     if existing:
         raise HTTPException(
@@ -212,7 +238,8 @@ def create_school(
         name=school_in.name,
         location=school_in.location,
         description=school_in.description,
-        logo_url=school_in.logo_url
+        logo_url=school_in.logo_url,
+        created_by_user_id=current_user.id
     )
     db.add(new_school)
     db.commit()
@@ -238,16 +265,34 @@ def get_school(school_id: int, db: Session = Depends(get_db)):
     return school
 
 
+@app.get("/schools/{school_id}/players", response_model=list[PlayerProfileOut])
+def get_school_players(school_id: int, db: Session = Depends(get_db)):
+    school = db.query(models.School).filter(models.School.id == school_id).first()
+    if not school:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="School not found")
+
+    return db.query(models.PlayerProfile).options(
+        joinedload(models.PlayerProfile.school)
+    ).filter(models.PlayerProfile.school_id == school_id).all()
+
+
 @app.patch("/schools/{school_id}", response_model=SchoolOut)
 def update_school(
     school_id: int,
     school_in: SchoolUpdate,
     db: Session = Depends(get_db),
-    admin_user: models.User = Depends(require_admin)
+    current_user: models.User = Depends(require_coach_or_admin)
 ):
     school = db.query(models.School).filter(models.School.id == school_id).first()
     if not school:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="School not found")
+
+    # Rule: Coaches can only update the school they created
+    if current_user.role != "ADMIN" and school.created_by_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Coaches can only update the school they created"
+        )
 
     if school_in.name is not None and school_in.name != school.name:
         dup = db.query(models.School).filter(models.School.name == school_in.name).first()
@@ -274,11 +319,18 @@ def update_school(
 def delete_school(
     school_id: int,
     db: Session = Depends(get_db),
-    admin_user: models.User = Depends(require_admin)
+    current_user: models.User = Depends(require_coach_or_admin)
 ):
     school = db.query(models.School).filter(models.School.id == school_id).first()
     if not school:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="School not found")
+
+    # Rule: Coaches can only delete the school they created
+    if current_user.role != "ADMIN" and school.created_by_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Coaches can only delete the school they created"
+        )
 
     db.delete(school)
     db.commit()
@@ -341,15 +393,24 @@ def create_player_profile(
 def list_players(
     position: PositionEnum | None = None,
     school_id: int | None = None,
+    school_name: str | None = None,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db)
 ):
     query = db.query(models.PlayerProfile).options(joinedload(models.PlayerProfile.school))
+
     if position:
         query = query.filter(models.PlayerProfile.position == position.value)
+
     if school_id is not None:
         query = query.filter(models.PlayerProfile.school_id == school_id)
+
+    # Search players by school name (e.g. typing "Ghana" or "University of Ghana")
+    if school_name:
+        query = query.join(models.PlayerProfile.school).filter(
+            models.School.name.ilike(f"%{school_name}%")
+        )
 
     offset = (page - 1) * limit
     return query.offset(offset).limit(limit).all()
@@ -431,5 +492,224 @@ def delete_player_profile(
         )
 
     db.delete(profile)
+    db.commit()
+    return None
+
+
+# ==========================================
+# Team Endpoints (Milestone 4)
+# ==========================================
+
+@app.post("/teams", response_model=TeamOut, status_code=status.HTTP_201_CREATED)
+def create_team(
+    team_in: TeamCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_coach_or_admin)
+):
+    school = db.query(models.School).filter(models.School.id == team_in.school_id).first()
+    if not school:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="School not found")
+
+    # A coach can only create a team for the school they manage
+    if current_user.role != "ADMIN" and school.created_by_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Coaches can only create teams for their own school"
+        )
+
+    new_team = models.Team(
+        name=team_in.name,
+        school_id=team_in.school_id,
+        description=team_in.description
+    )
+    db.add(new_team)
+    db.commit()
+    db.refresh(new_team)
+    return new_team
+
+
+@app.get("/teams", response_model=list[TeamOut])
+def list_teams(
+    school_id: int | None = None,
+    school_name: str | None = None,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.Team).options(joinedload(models.Team.school))
+
+    if school_id is not None:
+        query = query.filter(models.Team.school_id == school_id)
+
+    if school_name:
+        query = query.join(models.Team.school).filter(
+            models.School.name.ilike(f"%{school_name}%")
+        )
+
+    offset = (page - 1) * limit
+    return query.offset(offset).limit(limit).all()
+
+
+@app.get("/teams/{team_id}", response_model=TeamOut)
+def get_team(team_id: int, db: Session = Depends(get_db)):
+    team = db.query(models.Team).options(
+        joinedload(models.Team.school)
+    ).filter(models.Team.id == team_id).first()
+    if not team:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    return team
+
+
+@app.patch("/teams/{team_id}", response_model=TeamOut)
+def update_team(
+    team_id: int,
+    team_in: TeamUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_coach_or_admin)
+):
+    team = db.query(models.Team).options(
+        joinedload(models.Team.school)
+    ).filter(models.Team.id == team_id).first()
+    if not team:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+
+    if current_user.role != "ADMIN" and team.school.created_by_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Coaches can only update teams for their own school"
+        )
+
+    if team_in.name is not None:
+        team.name = team_in.name
+    if team_in.description is not None:
+        team.description = team_in.description
+
+    db.commit()
+    db.refresh(team)
+    return team
+
+
+@app.delete("/teams/{team_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_team(
+    team_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_coach_or_admin)
+):
+    team = db.query(models.Team).options(
+        joinedload(models.Team.school)
+    ).filter(models.Team.id == team_id).first()
+    if not team:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+
+    if current_user.role != "ADMIN" and team.school.created_by_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Coaches can only delete teams for their own school"
+        )
+
+    db.delete(team)
+    db.commit()
+    return None
+
+
+# ==========================================
+# Team Membership / Roster Endpoints
+# ==========================================
+
+@app.post("/teams/{team_id}/players", response_model=TeamMembershipOut, status_code=status.HTTP_201_CREATED)
+def add_player_to_team(
+    team_id: int,
+    membership_in: TeamMembershipCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_coach_or_admin)
+):
+    team = db.query(models.Team).options(
+        joinedload(models.Team.school)
+    ).filter(models.Team.id == team_id).first()
+    if not team:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+
+    if current_user.role != "ADMIN" and team.school.created_by_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Coaches can only manage rosters for their own team"
+        )
+
+    player = db.query(models.PlayerProfile).filter(models.PlayerProfile.id == membership_in.player_id).first()
+    if not player:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found")
+
+    # Prevent duplicate active membership in the same team
+    existing_member = db.query(models.TeamMembership).filter(
+        models.TeamMembership.team_id == team_id,
+        models.TeamMembership.player_id == membership_in.player_id,
+        models.TeamMembership.is_active == True
+    ).first()
+    if existing_member:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Player is already an active member of this team"
+        )
+
+    membership = models.TeamMembership(
+        team_id=team_id,
+        player_id=membership_in.player_id,
+        jersey_number=membership_in.jersey_number,
+        start_date=membership_in.start_date,
+        is_active=membership_in.is_active
+    )
+    db.add(membership)
+    db.commit()
+    db.refresh(membership)
+    return membership
+
+
+@app.get("/teams/{team_id}/players", response_model=list[RosterMemberOut])
+def get_team_roster(team_id: int, db: Session = Depends(get_db)):
+    team = db.query(models.Team).filter(models.Team.id == team_id).first()
+    if not team:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+
+    memberships = db.query(models.TeamMembership).options(
+        joinedload(models.TeamMembership.player).joinedload(models.PlayerProfile.school)
+    ).filter(
+        models.TeamMembership.team_id == team_id,
+        models.TeamMembership.is_active == True
+    ).all()
+
+    return memberships
+
+
+@app.delete("/teams/{team_id}/players/{player_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_player_from_team(
+    team_id: int,
+    player_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_coach_or_admin)
+):
+    team = db.query(models.Team).options(
+        joinedload(models.Team.school)
+    ).filter(models.Team.id == team_id).first()
+    if not team:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+
+    if current_user.role != "ADMIN" and team.school.created_by_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Coaches can only manage rosters for their own team"
+        )
+
+    membership = db.query(models.TeamMembership).filter(
+        models.TeamMembership.team_id == team_id,
+        models.TeamMembership.player_id == player_id,
+        models.TeamMembership.is_active == True
+    ).first()
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Player is not an active member of this team"
+        )
+
+    db.delete(membership)
     db.commit()
     return None

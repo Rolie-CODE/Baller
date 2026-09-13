@@ -80,6 +80,7 @@ class SchoolOut(BaseModel):
     location: str | None = None
     description: str | None = None
     logo_url: str | None = None
+    created_by_user_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -130,3 +131,62 @@ class PlayerProfileOut(BaseModel):
     profile_image_url: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+# --- Team Schemas ---
+
+class TeamCreate(BaseModel):
+    name: str = Field(..., min_length=2, max_length=150)
+    school_id: int
+    description: str | None = None
+
+
+class TeamUpdate(BaseModel):
+    name: str | None = Field(None, min_length=2, max_length=150)
+    description: str | None = None
+
+
+class TeamOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    school_id: int
+    description: str | None = None
+    school: SchoolOut | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+# --- Team Membership / Roster Schemas ---
+
+class TeamMembershipCreate(BaseModel):
+    player_id: int
+    jersey_number: int | None = Field(None, ge=0, le=99)
+    start_date: date | None = None
+    is_active: bool = True
+
+
+class TeamMembershipOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    team_id: int
+    player_id: int
+    jersey_number: int | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    is_active: bool
+
+
+class RosterMemberOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    team_id: int
+    player_id: int
+    player: PlayerProfileOut
+    jersey_number: int | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    is_active: bool
