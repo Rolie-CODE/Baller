@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from enum import Enum
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
@@ -6,6 +6,14 @@ from pydantic import BaseModel, EmailStr, Field, ConfigDict
 class RegisterRole(str, Enum):
     PLAYER = "PLAYER"
     COACH = "COACH"
+
+
+class PositionEnum(str, Enum):
+    PG = "PG"
+    SG = "SG"
+    SF = "SF"
+    PF = "PF"
+    C = "C"
 
 
 class UserCreate(BaseModel):
@@ -44,5 +52,81 @@ class UserOut(BaseModel):
     email: EmailStr
     role: str
     is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+# --- School Schemas ---
+
+class SchoolCreate(BaseModel):
+    name: str = Field(..., min_length=2, max_length=150)
+    location: str | None = Field(None, max_length=150)
+    description: str | None = None
+    logo_url: str | None = None
+
+
+class SchoolUpdate(BaseModel):
+    name: str | None = Field(None, min_length=2, max_length=150)
+    location: str | None = Field(None, max_length=150)
+    description: str | None = None
+    logo_url: str | None = None
+
+
+class SchoolOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    location: str | None = None
+    description: str | None = None
+    logo_url: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+# --- Player Profile Schemas ---
+
+class PlayerProfileCreate(BaseModel):
+    first_name: str = Field(..., min_length=1, max_length=50)
+    last_name: str = Field(..., min_length=1, max_length=50)
+    date_of_birth: date | None = None
+    height: float | None = Field(None, gt=0, description="Height must be greater than 0")
+    weight: float | None = Field(None, gt=0, description="Weight must be greater than 0")
+    position: PositionEnum
+    jersey_number: int | None = Field(None, ge=0, le=99)
+    school_id: int | None = None
+    bio: str | None = None
+    profile_image_url: str | None = None
+
+
+class PlayerProfileUpdate(BaseModel):
+    first_name: str | None = Field(None, min_length=1, max_length=50)
+    last_name: str | None = Field(None, min_length=1, max_length=50)
+    date_of_birth: date | None = None
+    height: float | None = Field(None, gt=0)
+    weight: float | None = Field(None, gt=0)
+    position: PositionEnum | None = None
+    jersey_number: int | None = Field(None, ge=0, le=99)
+    school_id: int | None = None
+    bio: str | None = None
+    profile_image_url: str | None = None
+
+
+class PlayerProfileOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    first_name: str
+    last_name: str
+    date_of_birth: date | None = None
+    height: float | None = None
+    weight: float | None = None
+    position: str
+    jersey_number: int | None = None
+    school_id: int | None = None
+    school: SchoolOut | None = None
+    bio: str | None = None
+    profile_image_url: str | None = None
     created_at: datetime
     updated_at: datetime
