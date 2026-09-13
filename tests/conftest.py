@@ -1,3 +1,4 @@
+import os
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -9,6 +10,8 @@ from main import app, get_db
 import models
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
+TEST_DB_PATH = "./test.db"
+SQLALCHEMY_DATABASE_URL = f"sqlite:///{TEST_DB_PATH}"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
@@ -31,9 +34,16 @@ app.dependency_overrides[get_db] = override_get_db
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_database():
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+    if os.path.exists(TEST_DB_PATH):
+        try:
+            os.remove(TEST_DB_PATH)
+        except OSError:
+            pass
 
 
 @pytest.fixture(autouse=True)
